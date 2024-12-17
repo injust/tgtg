@@ -1,3 +1,8 @@
+cookies.txt
+credentials.json
+credentials/
+
+
 # https://github.com/github/gitignore/blob/bdc996bb1f65d98792119284bf1abedaa698e6a9/Python.gitignore with .envrc (https://github.com/github/gitignore/pull/3619) un-ignored
 
 # Byte-compiled / optimized / DLL files
