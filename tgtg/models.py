@@ -297,6 +297,75 @@ class Item(Favorite):
 
 
 @frozen(kw_only=True)
+class Price:
+    code: str
+    minor_units: int
+    decimals: int
+
+    @classmethod
+    @debug
+    def from_json(cls, data: JSON) -> Self:
+        return cls(**data)
+
+    def __add__(self, other: Price) -> Self:
+        if not isinstance(other, Price):  # pyright: ignore[reportUnnecessaryIsInstance]
+            return NotImplemented  # type: ignore[unreachable]  # pyright: ignore[reportUnreachable]
+        if self.code != other.code:
+            raise ValueError("Incompatible currencies")
+
+        return copy.replace(self, minor_units=self.minor_units + other.minor_units)  # type: ignore[type-var]
+
+    def __sub__(self, other: Price) -> Self:
+        if not isinstance(other, Price):  # pyright: ignore[reportUnnecessaryIsInstance]
+            return NotImplemented  # type: ignore[unreachable]  # pyright: ignore[reportUnreachable]
+        if self.code != other.code:
+            raise ValueError("Incompatible currencies")
+
+        return copy.replace(self, minor_units=self.minor_units - other.minor_units)  # type: ignore[type-var]
+
+    @override
+    def __str__(self) -> str:
+        return format_currency(self.minor_units / 10**self.decimals, self.code)
+
+
+@frozen(kw_only=True)
+class Order:
+    class State(Enum):
+        ACTIVE = auto()
+        CANCELLED = auto()
+        NOT_COLLECTED = auto()
+        REDEEMED = auto()
+        REFUNDED = auto()
+
+    id: str = field(alias="order_id")
+    state: State = field(repr=repr_field, converter=State.__getitem__)  # type: ignore[misc]
+    pickup_interval: Interval[ZonedDateTime] = field(repr=repr_field)
+    quantity: int
+    total_price: Price = field(repr=repr_field, converter=Price.from_json)  # type: ignore[misc]
+    time_of_purchase: Instant = field(repr=repr_field, converter=Instant.parse_common_iso)  # type: ignore[misc]
+    item_id: str
+    pickup_window_changed: bool
+    has_dynamic_price: bool
+    last_updated_at: Instant = field(repr=repr_field, converter=Instant.parse_common_iso)  # type: ignore[misc]
+
+
+@frozen(kw_only=True)
+class RedeemedOrder(Order):
+    redeemed_at: Instant = field(
+        repr=repr_field,
+        converter=Instant.parse_common_iso,  # type: ignore[misc]
+        alias="redeemed_at_utc",
+    )
+
+
+@frozen(kw_only=True)
+class RefundedOrder(Order):
+    payment_state: str  # TODO: Make this an enum (Payment.State?)
+    cancelling_entity: str  # TODO: Make this an enum (Entity?)
+    cancelled_or_refunded_at: Instant = field(repr=repr_field, converter=Instant.parse_common_iso)  # type: ignore[misc]
+
+
+@frozen(kw_only=True)
 class Payment:
     class State(Enum):
         AUTHORIZATION_INITIATED = auto()
@@ -339,38 +408,6 @@ class FailedPayment(Payment):
     @classmethod
     def from_json(cls, data: JSON) -> NoReturn:
         raise NotImplementedError
-
-
-@frozen(kw_only=True)
-class Price:
-    code: str
-    minor_units: int
-    decimals: int
-
-    @classmethod
-    @debug
-    def from_json(cls, data: JSON) -> Self:
-        return cls(**data)
-
-    def __add__(self, other: Price) -> Self:
-        if not isinstance(other, Price):  # pyright: ignore[reportUnnecessaryIsInstance]
-            return NotImplemented  # type: ignore[unreachable]  # pyright: ignore[reportUnreachable]
-        if self.code != other.code:
-            raise ValueError("Incompatible currencies")
-
-        return copy.replace(self, minor_units=self.minor_units + other.minor_units)  # type: ignore[type-var]
-
-    def __sub__(self, other: Price) -> Self:
-        if not isinstance(other, Price):  # pyright: ignore[reportUnnecessaryIsInstance]
-            return NotImplemented  # type: ignore[unreachable]  # pyright: ignore[reportUnreachable]
-        if self.code != other.code:
-            raise ValueError("Incompatible currencies")
-
-        return copy.replace(self, minor_units=self.minor_units - other.minor_units)  # type: ignore[type-var]
-
-    @override
-    def __str__(self) -> str:
-        return format_currency(self.minor_units / 10**self.decimals, self.code)
 
 
 @frozen(kw_only=True)
