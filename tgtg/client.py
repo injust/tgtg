@@ -38,7 +38,7 @@ from .exceptions import (
     TgtgUnauthorizedError,
     TgtgValidationError,
 )
-from .models import Credentials, Item, Payment, Reservation, Voucher
+from .models import Credentials, Item, MultiUseVoucher, Payment, Reservation, Voucher
 from .utils import format_tz_offset, httpx_response_json_or_text, load_cookie_jar
 
 if TYPE_CHECKING:
@@ -533,12 +533,16 @@ class TgtgClient(BaseClient):
         vouchers = await self.get_active_vouchers()
         if not vouchers:
             raise TgtgPaymentError("No vouchers available")
-        vouchers = [voucher for voucher in vouchers if voucher.amount.code == reservation.total_price.code]
+        vouchers = [
+            voucher
+            for voucher in vouchers
+            if isinstance(voucher, MultiUseVoucher) and voucher.amount.code == reservation.total_price.code
+        ]
         if not vouchers:
             raise TgtgPaymentError(f"No {reservation.total_price.code} vouchers available")
 
         authorizations: list[JSON] = []
-        for voucher, running_amount in zip(vouchers, accumulate(voucher.amount for voucher in vouchers), strict=True):
+        for voucher, running_amount in zip(vouchers, accumulate(voucher.amount for voucher in vouchers), strict=True):  # type: ignore[attr-defined]
             authorizations.append(
                 {
                     "authorization_payload": {
@@ -548,7 +552,7 @@ class TgtgClient(BaseClient):
                     },
                     "payment_provider": "VOUCHER",
                     "return_url": "adyencheckout://com.app.tgtg.itemview",
-                    "amount": asdict(voucher.amount),
+                    "amount": asdict(voucher.amount),  # type: ignore[attr-defined]
                 }
             )
             if running_amount.minor_units >= reservation.total_price.minor_units:
