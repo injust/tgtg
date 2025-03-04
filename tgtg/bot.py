@@ -165,7 +165,7 @@ class Bot:
                 await self.client.ntfy.publish(f"Ordered: {order['quantity']}x {item.name}", tag="shopping_cart")
                 return order
 
-    async def snipe(self, item: Item) -> Reservation | None:
+    async def snipe(self, item: Item) -> JSON | None:
         logger.info("Sniping item {}...", item.id)
         await self._del_scheduled_snipe(item.id, conflict_policy=ConflictPolicy.exception)
 
@@ -174,11 +174,13 @@ class Bot:
             if did_item_change := snipe.is_selling or snipe.tag != item.tag:
                 logger.info(f"Snipe attempt {attempt + 1}<normal>: {snipe.colorize()}</normal>")  # noqa: G004
 
-            if snipe.is_selling and (reservation := await self.hold(snipe)):
+            if snipe.is_selling and (order := await self.order(snipe)):
                 if attempt == self.snipe_max_attempts - 1:
                     logger.warning("Snipe succeeded on final attempt", self.snipe_max_attempts)
                     self.snipe_max_attempts += 1
-                return reservation
+                # TODO: Detect recently reserved/ordered items in case stores drop additional bags
+                await self._untrack_item(snipe.id)
+                return order
 
             if did_item_change:
                 logger.error(f"Unexpected<normal>: {snipe.colorize()}</normal>")  # noqa: G004
@@ -257,8 +259,9 @@ class Bot:
                 item = await self.client.get_item(fave.id)
                 if item.num_available != fave.num_available:
                     logger.warning(f"Updated<normal>: {item.to_favorite().colorize_diff(fave)}</normal>")  # noqa: G004
-                if item.num_available:
-                    await self.hold(item)
+                if item.num_available and await self.order(item):
+                    # TODO: Detect recently reserved/ordered items in case stores drop additional bags
+                    await self._untrack_item(item.id)
 
             if (
                 fave.tag != Favorite.Tag.CHECK_AGAIN_LATER
