@@ -55,6 +55,7 @@ CREDENTIALS_PATH = (Path.cwd() / "credentials.json").resolve()
 class Bot:
     client: TgtgClient
     tracked_items: dict[int, Item | None]
+    held_items: dict[int, Reservation] = field(init=False, factory=dict)
     scheduled_snipes: dict[int, Instant | None] = field(init=False, factory=dict)
 
     CATCH_RESERVATION_DELAY: ClassVar[TimeDelta] = seconds(1)
@@ -68,9 +69,12 @@ class Bot:
             reservation = await self.client.reserve(item, quantity)
         except TgtgApiError as e:
             logger.error("Item {}<normal>: {!r}</normal>", item.id, e)
+            if item.id in self.held_items:
+                del self.held_items[item.id]
             return None
         else:
             logger.success(f"<normal>{reservation.colorize()}</normal>")
+            self.held_items[item.id] = reservation
 
             await self.client.scheduler.add_schedule(
                 partial(self.hold, item, reservation.quantity),
@@ -141,6 +145,17 @@ class Bot:
             if item.id in self.tracked_items:
                 if item == (old_item := self.tracked_items[item.id]):
                     return
+                if (
+                    old_item
+                    and item.id in self.held_items
+                    and item.num_available == self.held_items[item.id].quantity
+                    and old_item.in_sales_window is True is item.in_sales_window
+                    and old_item.tag == Item.Tag.SOLD_OUT
+                    and item.is_selling
+                ):
+                    # Ignore API flapping after reserving an item
+                    return
+
                 self.tracked_items[item.id] = item
 
                 logger_func = logger.debug if item.id in items.ignored else logger.info
