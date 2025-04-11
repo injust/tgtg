@@ -155,6 +155,16 @@ class Bot:
                 ):
                     # Ignore API flapping after reserving an item
                     return
+                if (
+                    old_item
+                    and item.id in self.held_items
+                    and old_item.in_sales_window is True is item.in_sales_window
+                    and old_item.tag == Item.Tag.SOLD_OUT == item.tag
+                    and item.sold_out_at
+                    and item.sold_out_at < self.held_items[item.id].reserved_at.round(mode="half_ceil")
+                ):
+                    # Ignore `Item.sold_out_at` API flapping
+                    return
 
                 self.tracked_items[item.id] = item
 
