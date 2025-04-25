@@ -39,6 +39,7 @@ from .exceptions import (
     TgtgValidationError,
 )
 from .models import Credentials, Item, MultiUseVoucher, Payment, Reservation, Voucher
+from .ntfy import NtfyClient, Priority
 from .utils import format_tz_offset, httpx_response_json_or_text, load_cookie_jar
 
 if TYPE_CHECKING:
@@ -48,6 +49,8 @@ if TYPE_CHECKING:
     from .models import JSON
 
 logger = logger.opt(colors=True)
+
+NTFY_TOPIC = "tgtg-injust"
 
 
 @define(eq=False)
@@ -63,6 +66,7 @@ class TgtgClient(BaseClient):
     datadome: DataDomeSdk = field(
         init=False, default=Factory(lambda self: DataDomeSdk(cast("TgtgClient", self).cookies), takes_self=True)
     )
+    ntfy: NtfyClient = field(init=False, factory=lambda: NtfyClient(NTFY_TOPIC))
     scheduler: AsyncScheduler = field(init=False, factory=AsyncScheduler)  # pyright: ignore[reportArgumentType, reportCallIssue, reportUnknownVariableType]
 
     DEVICE_TYPE: ClassVar[str] = "ANDROID"
@@ -112,6 +116,7 @@ class TgtgClient(BaseClient):
         async with AsyncExitStack() as exit_stack:
             await exit_stack.enter_async_context(self.httpx)
             await exit_stack.enter_async_context(self.datadome)
+            await exit_stack.enter_async_context(self.ntfy)
 
             if not hasattr(self, "credentials"):
                 self.credentials = await self.login(self.email)
@@ -174,6 +179,7 @@ class TgtgClient(BaseClient):
             case HTTPStatus.FORBIDDEN, _ if "X-DD-B" in r.headers:
                 # TODO: Handle DataDome CAPTCHA
                 logger.opt(colors=False).debug(r.text)
+                await self.ntfy.publish("DataDome CAPTCHA", priority=Priority.HIGH, tag="rotating_light")
                 await self.scheduler.stop()
                 raise CaptchaError
             case HTTPStatus.FORBIDDEN, _ if r.json() == {"errors": [{"code": "UNAUTHORIZED"}]}:
