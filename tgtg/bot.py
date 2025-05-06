@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from asyncio import CancelledError
+from collections import defaultdict, deque
 from contextlib import AsyncExitStack
 from functools import partial
 from http.cookiejar import MozillaCookieJar
@@ -55,7 +56,7 @@ CREDENTIALS_PATH = (Path.cwd() / "credentials.json").resolve()
 class Bot:
     client: TgtgClient
     tracked_items: dict[int, Favorite | None]
-    held_items: dict[int, Reservation] = field(init=False, factory=dict)
+    held_items: dict[int, deque[Reservation]] = field(init=False, factory=lambda: defaultdict(deque))
     scheduled_snipes: dict[int, Instant | None] = field(init=False, factory=dict)
 
     API_FLAPPING_COOLDOWN: ClassVar[TimeDelta] = minutes(2)
@@ -90,7 +91,7 @@ class Bot:
         else:
             logger.success(f"<normal>{reservation.colorize()}</normal>")
             await self.client.ntfy.publish(f"Held: {reservation.quantity}x {item.name}", tag="hourglass_flowing_sand")
-            self.held_items[item.id] = reservation
+            self.held_items[item.id].append(reservation)
             await self._schedule_catch(reservation)
             return reservation
 
@@ -101,14 +102,14 @@ class Bot:
             reservation = await self.client.reserve(held.item_id, held.quantity)
         except TgtgApiError as e:
             logger.error("Item {}<normal>: {!r}</normal>", held.item_id, e)
-            if self.held_items[held.item_id] == held:
-                del self.held_items[held.item_id]
             return None
         else:
             logger.success(f"<normal>{reservation.colorize()}</normal>")
-            self.held_items[held.item_id] = reservation
+            self.held_items[held.item_id].append(reservation)
             await self._schedule_catch(reservation)
             return reservation
+        finally:
+            self.held_items[held.item_id].remove(held)
 
     @logger.catch
     @retry_policy
@@ -169,19 +170,20 @@ class Bot:
                     return
                 if (
                     old_fave
-                    and fave.id in self.held_items
-                    and fave.num_available == self.held_items[fave.id].quantity
                     and old_fave.tag == Favorite.Tag.SOLD_OUT
                     and fave.is_selling
+                    and any(
+                        fave.num_available == reservation.quantity for reservation in reversed(self.held_items[fave.id])
+                    )
                 ):
                     # Ignore API flapping after reserving an item
                     return
                 if (
                     old_fave
-                    and fave.id in self.held_items
                     and old_fave.tag == Favorite.Tag.SOLD_OUT == fave.tag
                     and fave.sold_out_at
-                    and fave.sold_out_at < self.held_items[fave.id].reserved_at.round(mode="half_ceil")
+                    and self.held_items[fave.id]
+                    and fave.sold_out_at < self.held_items[fave.id][-1].reserved_at.round(mode="half_ceil")
                 ):
                     # Ignore `Favorite.sold_out_at` API flapping
                     return
@@ -191,17 +193,13 @@ class Bot:
                 logger_func = logger.debug if fave.id in items.ignored else logger.info
                 if old_fave:
                     if (
-                        fave.id in self.held_items
-                        and (
-                            old_fave.tag == Favorite.Tag.SOLD_OUT
-                            or old_fave.num_available == self.held_items[fave.id].quantity
-                        )
-                        and (
-                            old_fave.is_selling
-                            or old_fave.tag in {Favorite.Tag.CHECK_AGAIN_LATER, Favorite.Tag.SOLD_OUT}
-                        )
+                        (old_fave.is_selling or old_fave.tag in {Favorite.Tag.CHECK_AGAIN_LATER, Favorite.Tag.SOLD_OUT})
                         and fave.tag == Favorite.Tag.SOLD_OUT
-                        and fave.sold_out_at == self.held_items[fave.id].reserved_at.round(mode="half_ceil")
+                        and any(
+                            (old_fave.tag == Favorite.Tag.SOLD_OUT or old_fave.num_available == reservation.quantity)
+                            and fave.sold_out_at == reservation.reserved_at.round(mode="half_ceil")
+                            for reservation in reversed(self.held_items[fave.id])
+                        )
                     ):
                         # Lower logging severity when item updates after reserving
                         logger_func = logger.debug
