@@ -30,7 +30,7 @@ from whenever import Instant, TimeDelta, minutes, seconds
 from . import items
 from .client import TgtgClient
 from .exceptions import TgtgApiError, TgtgPaymentError
-from .models import Credentials, Item, Reservation
+from .models import Credentials, Favorite, Item, Reservation
 from .utils import format_time, relative_date
 
 if TYPE_CHECKING:
@@ -54,7 +54,7 @@ CREDENTIALS_PATH = (Path.cwd() / "credentials.json").resolve()
 @frozen(eq=False)
 class Bot:
     client: TgtgClient
-    tracked_items: dict[int, Item | None]
+    tracked_items: dict[int, Favorite | None]
     held_items: dict[int, Reservation] = field(init=False, factory=dict)
     scheduled_snipes: dict[int, Instant | None] = field(init=False, factory=dict)
 
@@ -73,7 +73,7 @@ class Bot:
 
     @logger.catch
     @retry_policy
-    async def hold(self, item: Item, quantity: int, *, is_catch: bool = False) -> Reservation | None:
+    async def hold(self, item: Favorite, quantity: int, *, is_catch: bool = False) -> Reservation | None:
         try:
             reservation = await self.client.reserve(item, quantity)
         except TgtgApiError as e:
@@ -100,7 +100,7 @@ class Bot:
 
     @logger.catch
     @retry_policy
-    async def order(self, item: Item, quantity: int) -> JSON | None:
+    async def order(self, item: Favorite, quantity: int) -> JSON | None:
         try:
             reservation = await self.client.reserve(item, quantity)
         except TgtgApiError as e:
@@ -151,69 +151,72 @@ class Bot:
 
     @logger.catch
     async def check_favorites(self) -> None:
-        async def process_item(item: Item) -> None:
-            if item.id in self.tracked_items:
-                if item == (old_item := self.tracked_items[item.id]):
+        async def process_favorite(fave: Favorite) -> None:
+            if fave.id in self.tracked_items:
+                if fave == (old_fave := self.tracked_items[fave.id]):
                     return
                 if (
-                    old_item
-                    and item.id in self.held_items
-                    and item.num_available == self.held_items[item.id].quantity
-                    and old_item.tag == Item.Tag.SOLD_OUT
-                    and item.is_selling
+                    old_fave
+                    and fave.id in self.held_items
+                    and fave.num_available == self.held_items[fave.id].quantity
+                    and old_fave.tag == Favorite.Tag.SOLD_OUT
+                    and fave.is_selling
                 ):
                     # Ignore API flapping after reserving an item
                     return
                 if (
-                    old_item
-                    and item.id in self.held_items
-                    and old_item.tag == Item.Tag.SOLD_OUT == item.tag
-                    and item.sold_out_at
-                    and item.sold_out_at < self.held_items[item.id].reserved_at.round(mode="half_ceil")
+                    old_fave
+                    and fave.id in self.held_items
+                    and old_fave.tag == Favorite.Tag.SOLD_OUT == fave.tag
+                    and fave.sold_out_at
+                    and fave.sold_out_at < self.held_items[fave.id].reserved_at.round(mode="half_ceil")
                 ):
-                    # Ignore `Item.sold_out_at` API flapping
+                    # Ignore `Favorite.sold_out_at` API flapping
                     return
 
-                self.tracked_items[item.id] = item
+                self.tracked_items[fave.id] = fave
 
-                logger_func = logger.debug if item.id in items.ignored else logger.info
-                if old_item:
+                logger_func = logger.debug if fave.id in items.ignored else logger.info
+                if old_fave:
                     if (
-                        item.id in self.held_items
+                        fave.id in self.held_items
                         and (
-                            old_item.tag == Item.Tag.SOLD_OUT
-                            or old_item.num_available == self.held_items[item.id].quantity
+                            old_fave.tag == Favorite.Tag.SOLD_OUT
+                            or old_fave.num_available == self.held_items[fave.id].quantity
                         )
-                        and (old_item.is_selling or old_item.tag in {Item.Tag.CHECK_AGAIN_LATER, Item.Tag.SOLD_OUT})
-                        and item.tag == Item.Tag.SOLD_OUT
-                        and item.sold_out_at == self.held_items[item.id].reserved_at.round(mode="half_ceil")
+                        and (
+                            old_fave.is_selling
+                            or old_fave.tag in {Favorite.Tag.CHECK_AGAIN_LATER, Favorite.Tag.SOLD_OUT}
+                        )
+                        and fave.tag == Favorite.Tag.SOLD_OUT
+                        and fave.sold_out_at == self.held_items[fave.id].reserved_at.round(mode="half_ceil")
                     ):
                         # Lower logging severity when item updates after reserving
                         logger_func = logger.debug
 
-                    logger_func(f"Changed<normal>: {item.colorize_diff(old_item)}</normal>")
-                elif item.is_interesting:
-                    logger_func(f"<normal>{item.colorize()}</normal>")
+                    logger_func(f"Changed<normal>: {fave.colorize_diff(old_fave)}</normal>")
+                elif fave.is_interesting:
+                    logger_func(f"<normal>{fave.colorize()}</normal>")
 
-                if item.id in items.ignored:
+                if fave.id in items.ignored:
                     return
-            elif item.is_interesting or item.id not in items.inactive:
+            elif fave.is_interesting or fave.id not in items.inactive:
                 logger.warning(
-                    f"{'Inactive' if item.id in items.inactive else 'Unknown'}<normal>: {item.colorize()}</normal>"  # noqa: G004
+                    f"{'Inactive' if fave.id in items.inactive else 'Unknown'}<normal>: {fave.colorize()}</normal>"  # noqa: G004
                 )
-                self.tracked_items[item.id] = item
+                self.tracked_items[fave.id] = fave
 
-            if item.num_available:
-                await self.hold(item, item.num_available)
+            if fave.num_available:
+                await self.hold(fave, fave.num_available)
 
             if (
-                item.tag != Item.Tag.CHECK_AGAIN_LATER
-                and item.id in self.scheduled_snipes
-                and not self.scheduled_snipes[item.id]
+                fave.tag != Favorite.Tag.CHECK_AGAIN_LATER
+                and fave.id in self.scheduled_snipes
+                and not self.scheduled_snipes[fave.id]
             ):
-                await self._del_scheduled_snipe(item.id, conflict_policy=ConflictPolicy.do_nothing)
-            elif item.tag == Item.Tag.CHECK_AGAIN_LATER and item.id not in self.scheduled_snipes:
-                if (item := await self.client.get_item(item.id)).next_drop:
+                await self._del_scheduled_snipe(fave.id, conflict_policy=ConflictPolicy.do_nothing)
+            elif fave.tag == Favorite.Tag.CHECK_AGAIN_LATER and fave.id not in self.scheduled_snipes:
+                if (item := await self.client.get_item(fave.id)).next_drop:
                     await self.client.scheduler.add_schedule(
                         partial(self.snipe, item.id),
                         DateTrigger(item.next_drop.py_datetime()),
@@ -234,8 +237,8 @@ class Bot:
 
         async with create_task_group() as tg:
             try:
-                async for item in self.client._get_favorites():
-                    tg.start_soon(process_item, item)
+                async for fave in self.client._get_favorites():
+                    tg.start_soon(process_favorite, fave)
             except httpx.TransportError as e:
                 logger.error("{!r}", e)
 

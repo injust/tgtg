@@ -136,7 +136,7 @@ class Interval:
 
 
 @frozen(kw_only=True)
-class Item(ColorizeMixin):
+class Favorite(ColorizeMixin):
     class Tag(StrEnum):
         NEW = "New"
 
@@ -153,7 +153,7 @@ class Item(ColorizeMixin):
 
         @classmethod
         @debug
-        def from_json(cls, data: JSON) -> Item.Tag:
+        def from_json(cls, data: JSON) -> Favorite.Tag:
             match data["id"]:
                 case "GENERIC":
                     tag = cls[data["variant"]]
@@ -179,19 +179,6 @@ class Item(ColorizeMixin):
         repr=repr_field,
         converter=optional(Instant.parse_common_iso),  # type: ignore[misc]
     )
-    purchase_limit: int | None = field(default=None, alias="user_purchase_limit")
-    next_drop: Instant | None = field(
-        default=None,
-        repr=repr_field,
-        converter=optional(Instant.parse_common_iso),  # type: ignore[misc]
-        alias="next_sales_window_purchase_start",
-    )
-    blocked_until: Instant | None = field(
-        default=None,
-        repr=repr_field,
-        converter=optional(Instant.parse_common_iso),  # type: ignore[misc]
-        alias="reservation_blocked_until",
-    )
 
     @classmethod
     @debug
@@ -205,7 +192,7 @@ class Item(ColorizeMixin):
 
             return " ".join(name)
 
-        def convert_tags(data: Iterable[JSON]) -> Item.Tag | None:
+        def convert_tags(data: Iterable[JSON]) -> Favorite.Tag | None:
             tags = set(map(cls.Tag.from_json, data))
             tags.discard(cls.Tag.NEW)
             tags.discard(cls.Tag.POPULAR)
@@ -269,6 +256,23 @@ class Item(ColorizeMixin):
                 )
 
         return f"{type(self).__name__}(<dim>{', '.join(field_repr)}</dim>)"
+
+
+@frozen(kw_only=True)
+class Item(Favorite):
+    purchase_limit: int | None = field(default=None, alias="user_purchase_limit")
+    next_drop: Instant | None = field(
+        default=None,
+        repr=repr_field,
+        converter=optional(Instant.parse_common_iso),  # type: ignore[misc]
+        alias="next_sales_window_purchase_start",
+    )
+    blocked_until: Instant | None = field(
+        default=None,
+        repr=repr_field,
+        converter=optional(Instant.parse_common_iso),  # type: ignore[misc]
+        alias="reservation_blocked_until",
+    )
 
 
 @frozen(kw_only=True)
