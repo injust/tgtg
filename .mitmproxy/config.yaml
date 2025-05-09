@@ -11,8 +11,6 @@ ignore_hosts:
   - ^crashlyticsreports-pa\.googleapis\.com:443$
   - ^firebaselogging-pa\.googleapis\.com:443$
   - ^images\.tgtg\.ninja:443$
-intercept: /api/order/v\d+/\w+/pay$
-intercept_active: true
 mode:
   - wireguard
 modify_headers:
