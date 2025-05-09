@@ -28,6 +28,7 @@ repos:
             httpx,
             humanize,
             loguru,
+            mitmproxy,
             orjson,
             packaging,
             tenacity,

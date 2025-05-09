@@ -5,6 +5,7 @@ babel~=2.17
 httpx[http2]~=0.28
 humanize~=4.12
 loguru~=0.7
+mitmproxy~=12.1
 orjson~=3.11
 packaging~=24.2
 pyjwt~=2.10
