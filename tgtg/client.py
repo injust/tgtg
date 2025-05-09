@@ -38,7 +38,7 @@ from .exceptions import (
     TgtgUnauthorizedError,
     TgtgValidationError,
 )
-from .models import Credentials, Favorite, Item, MultiUseVoucher, Payment, Reservation, Voucher
+from .models import Credentials, FailedPayment, Favorite, Item, MultiUseVoucher, Payment, Reservation, Voucher
 from .ntfy import NtfyClient, Priority
 from .utils import format_tz_offset, httpx_response_json_or_text, load_cookie_jar
 
@@ -579,7 +579,7 @@ class TgtgClient(BaseClient):
             logger.debug(payments)
 
         if failed := [payment for payment in payments if payment.state == Payment.State.FAILED]:
-            raise TgtgPaymentError({payment.failure_reason for payment in failed})
+            raise TgtgPaymentError({cast("FailedPayment", payment).failure_reason for payment in failed})
         assert all(payment.state in {Payment.State.CAPTURED, Payment.State.FULLY_REFUNDED} for payment in payments), (
             payments
         )
