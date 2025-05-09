@@ -1,3 +1,7 @@
+.mitmproxy/mitmproxy-ca.pem
+.mitmproxy/mitmproxy-ca-cert.*
+.mitmproxy/mitmproxy-dhparam.pem
+.mitmproxy/wireguard.conf
 cookies.txt
 credentials.json
 credentials/

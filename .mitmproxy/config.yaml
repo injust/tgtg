@@ -1,0 +1,12 @@
+allow_hosts:
+  - ^apptoogoodtogo\.com:443$
+  - \.captcha-delivery\.com:443$
+  - ^api-sdk\.datadome\.co:443$
+command_history: false
+ignore_hosts:
+  - ^images\.tgtg\.ninja:443$
+intercept: /api/order/v\d+/\w+/pay$
+intercept_active: true
+mode:
+  - wireguard
+web_password: '$argon2i$v=19$m=8,t=1,p=1$YWFhYWFhYWE$nXD9kg' # https://github.com/mitmproxy/mitmproxy/issues/7551#issuecomment-2781367454
