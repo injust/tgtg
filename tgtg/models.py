@@ -5,7 +5,7 @@ from abc import ABC
 from enum import Enum, StrEnum, auto
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Self, overload, override
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, overload, override
 
 import httpx
 import jwt
@@ -318,6 +318,11 @@ class FailedPayment(Payment):
 
     failure_reason: FailureReason = field(repr=repr_field, converter=FailureReason.__getitem__)  # type: ignore[misc]
 
+    @override
+    @classmethod
+    def from_json(cls, data: JSON) -> NoReturn:
+        raise NotImplementedError
+
 
 @frozen(kw_only=True)
 class Price:
@@ -439,9 +444,19 @@ class MultiUseVoucher(Voucher):
     amount: Price = field(repr=repr_field, converter=Price.from_json, alias="current_amount")  # type: ignore[misc]
     original_amount: Price | None = field(default=None, repr=repr_field, converter=optional(Price.from_json))  # type: ignore[misc]
 
+    @override
+    @classmethod
+    def from_json(cls, data: JSON) -> NoReturn:
+        raise NotImplementedError
+
 
 @frozen(kw_only=True)
 class SingleUseVoucher(Voucher):
     max_item_price: Price | None = field(default=None, repr=repr_field, converter=optional(Price.from_json))  # type: ignore[misc]
     items_left: int
     num_items: int | None = field(default=None, alias="number_of_items")
+
+    @override
+    @classmethod
+    def from_json(cls, data: JSON) -> NoReturn:
+        raise NotImplementedError
