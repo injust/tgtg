@@ -4,6 +4,12 @@ allow_hosts:
   - ^api-sdk\.datadome\.co:443$
 command_history: false
 ignore_hosts:
+  - ^api2\.amplitude\.com:443$
+  - ^2jxzjo\.cdn-settings\.appsflyersdk\.com:443$
+  - ^sdk\.fra-01\.braze\.eu:443$
+  - ^firebase-settings\.crashlytics\.com:443$
+  - ^crashlyticsreports-pa\.googleapis\.com:443$
+  - ^firebaselogging-pa\.googleapis\.com:443$
   - ^images\.tgtg\.ninja:443$
 intercept: /api/order/v\d+/\w+/pay$
 intercept_active: true
