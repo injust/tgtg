@@ -5,12 +5,12 @@ from abc import ABC
 from enum import Enum, StrEnum, auto
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, overload, override
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, cast, overload, override
 
 import httpx
 import jwt
 import orjson as jsonlib
-from attrs import Attribute, asdict, field, fields, frozen
+from attrs import Attribute, Converter, asdict, field, fields, frozen
 from attrs.converters import optional
 from babel.numbers import format_currency
 from loguru import logger
@@ -179,6 +179,20 @@ class Favorite(ColorizeMixin):
         repr=repr_field,
         converter=optional(Instant.parse_common_iso),  # type: ignore[misc]
     )
+    purchase_end: Instant | None = field(
+        default=None,
+        repr=repr_field,
+        converter=[  # type: ignore[misc]
+            optional(Instant.parse_common_iso),
+            Converter(
+                lambda purchase_end, self: purchase_end
+                if (pickup_interval := cast("Favorite", self).pickup_interval) is None
+                or pickup_interval.end != purchase_end
+                else None,
+                takes_self=True,
+            ),
+        ],
+    )
 
     @classmethod
     @debug
@@ -222,7 +236,7 @@ class Favorite(ColorizeMixin):
             "item_type",
         ):
             del data[key]
-        for key in "purchase_end", "sharing_url", "matches_filters", "item_card", "item_special_reward":
+        for key in "sharing_url", "matches_filters", "item_card", "item_special_reward":
             if key in data:
                 del data[key]
 
