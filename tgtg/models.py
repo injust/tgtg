@@ -292,6 +292,12 @@ class Item(Favorite):
     def max_quantity(self) -> int:
         return min(self.num_available, self.purchase_limit or self.num_available)
 
+    def to_favorite(self) -> Favorite:
+        fave = object.__new__(Favorite)
+        for field_ in fields(Favorite):
+            object.__setattr__(fave, field_.name, getattr(self, field_.name))
+        return fave
+
 
 @frozen(kw_only=True)
 class Payment:
