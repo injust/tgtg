@@ -30,7 +30,7 @@ from whenever import Instant, TimeDelta, minutes, seconds
 
 from . import items
 from .client import TgtgClient
-from .exceptions import TgtgApiError, TgtgLimitExceededError, TgtgPaymentError
+from .exceptions import TgtgApiError, TgtgLimitExceededError, TgtgPaymentError, TgtgSaleClosedError
 from .models import Credentials, Favorite, Item, Reservation
 from .utils import format_time, relative_date
 
@@ -109,7 +109,8 @@ class Bot:
         try:
             reservation = await self.client.reserve(held.item_id, held.quantity)
         except TgtgApiError as e:
-            logger.error("Item {}<normal>: {!r}</normal>", held.item_id, e)
+            logger_func = logger.warning if isinstance(e, TgtgSaleClosedError) else logger.error
+            logger_func("Item {}<normal>: {!r}</normal>", held.item_id, e)
             if isinstance(e, TgtgLimitExceededError):
                 await self._untrack_item(held.item_id)
             return None
