@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import wraps
 from json import JSONDecodeError
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import httpx
 import humanize
@@ -14,7 +14,13 @@ if TYPE_CHECKING:
     from http.cookiejar import FileCookieJar
 
     import whenever
-    from whenever import Date, Time, TimeDelta
+    from whenever import Date, Instant, Time, TimeDelta
+
+
+# TODO(https://github.com/ariebovenberg/whenever/issues/37): Replace with whenever's interval type
+class Interval(NamedTuple):
+    start: Instant
+    end: Instant
 
 
 def format_time(time: Time) -> str:

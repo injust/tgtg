@@ -17,7 +17,7 @@ from loguru import logger
 from whenever import Instant, TimeDelta, minutes
 
 from .api import TGTG_BASE_URL
-from .utils import relative_local_datetime
+from .utils import Interval, relative_local_datetime
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Iterable
@@ -52,6 +52,13 @@ def repr_field(obj: object) -> str:
         case Instant():
             date, time = relative_local_datetime(obj)
             return repr(f"{date} at {time}")
+        case Interval():
+            start_date, start_time = relative_local_datetime(obj.start)
+            end_date, end_time = relative_local_datetime(obj.end)
+
+            if start_date == end_date:
+                return repr(f"{start_date} {start_time}–{end_time}")  # noqa: RUF001
+            return repr(f"{start_date} at {start_time} to {end_date} at {end_time}")
         case _:
             return repr(str(obj))
 
@@ -111,30 +118,6 @@ class Credentials(httpx.Auth):
             logger.debug("Saved credentials to<normal>: {}</normal>", path)
 
 
-# TODO(https://github.com/ariebovenberg/whenever/issues/37): Replace with whenever's interval type
-@frozen
-class Interval:
-    start: Instant
-    end: Instant
-
-    @classmethod
-    @debug
-    def from_json(cls, data: JSON) -> Self:
-        start = Instant.parse_common_iso(data.pop("start"))
-        end = Instant.parse_common_iso(data.pop("end"))
-
-        return cls(start, end, **data)
-
-    @override
-    def __str__(self) -> str:
-        start_date, start_time = relative_local_datetime(self.start)
-        end_date, end_time = relative_local_datetime(self.end)
-
-        if start_date == end_date:
-            return f"{start_date} {start_time}–{end_time}"  # noqa: RUF001
-        return f"{start_date} at {start_time} to {end_date} at {end_time}"
-
-
 @frozen(kw_only=True)
 class Favorite(ColorizeMixin):
     class Tag(StrEnum):
@@ -173,7 +156,7 @@ class Favorite(ColorizeMixin):
     name: str
     tag: Tag | None = field(default=Tag.NOTHING_TODAY, repr=repr_field)
     num_available: int = field(default=0, alias="items_available")
-    pickup_interval: Interval | None = field(default=None, repr=repr_field, converter=optional(Interval.from_json))  # type: ignore[misc]
+    pickup_interval: Interval | None = field(default=None, repr=repr_field)
     sold_out_at: Instant | None = field(
         default=None,
         repr=repr_field,
@@ -205,6 +188,12 @@ class Favorite(ColorizeMixin):
             name.append(f"({item_name})")
 
             return " ".join(name)
+
+        def build_pickup_interval(pickup_interval: JSON | None) -> Interval | None:
+            if pickup_interval is None:
+                return None
+
+            return Interval(*map(Instant.parse_common_iso, pickup_interval.values()))
 
         def convert_tags(data: Iterable[JSON]) -> Favorite.Tag | None:
             tags = set(map(cls.Tag.from_json, data))
@@ -240,7 +229,13 @@ class Favorite(ColorizeMixin):
             if key in data:
                 del data[key]
 
-        return cls(id=item["item_id"], name=build_name(item, store), tag=convert_tags(item_tags), **data)
+        return cls(
+            id=item["item_id"],
+            name=build_name(item, store),
+            tag=convert_tags(item_tags),
+            pickup_interval=build_pickup_interval(data.pop("pickup_interval", None)),
+            **data,
+        )
 
     @property
     def is_selling(self) -> bool:
