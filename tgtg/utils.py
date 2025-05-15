@@ -14,13 +14,13 @@ if TYPE_CHECKING:
     from http.cookiejar import FileCookieJar
 
     import whenever
-    from whenever import Date, Instant, Time, TimeDelta
+    from whenever import Date, Time, TimeDelta, ZonedDateTime
 
 
 # TODO(https://github.com/ariebovenberg/whenever/issues/37): Replace with whenever's interval type
 class Interval(NamedTuple):
-    start: Instant
-    end: Instant
+    start: ZonedDateTime
+    end: ZonedDateTime
 
 
 def format_time(time: Time) -> str:
