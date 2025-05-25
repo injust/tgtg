@@ -60,7 +60,7 @@ class Bot:
     client: TgtgClient
     tracked_items: dict[int, Favorite | None]
     favorites_page_size: int = field(default=25, kw_only=True)
-    snipe_max_attempts: int = field(default=6, kw_only=True)
+    snipe_max_attempts: int = field(default=5, kw_only=True)
 
     held_items: dict[int, deque[Reservation]] = field(init=False, factory=lambda: defaultdict(deque))
     scheduled_snipes: dict[int, Instant | None] = field(init=False, factory=dict)
