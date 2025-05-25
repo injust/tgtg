@@ -30,8 +30,8 @@ class TgtgApi(StrEnum):
     INVITATION_DISABLE = "invitation/v1/{}/disable"
     INVITATION_RETURN = "invitation/v1/{}/regret"
 
-    FAVORITES = "discover/v1/bucket"
     ITEMS = "item/v8/"
+    FAVORITES = "item/v9/favorites"
 
     ITEM_STATUS = "item/v8/{}"
     ITEM_FAVORITE = "user/favorite/v1/{}/update"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import AsyncExitStack
 from http import HTTPStatus
-from itertools import accumulate, count
+from itertools import accumulate
 from json import JSONDecodeError
 from typing import TYPE_CHECKING, ClassVar, Self, cast, overload, override
 from uuid import UUID, uuid4
@@ -73,9 +73,6 @@ class TgtgClient(BaseClient):
     LANGUAGE: ClassVar[str] = (default_locale() or "en_US").replace("_", "-")
     # Scarborough, Toronto, Canada
     LOCATION: ClassVar[dict[str, float]] = {"latitude": 43.7729744, "longitude": -79.2576479}
-    # NOTE: This is actually a float on the wire, but the app constrains it to integer values
-    RADIUS: ClassVar[int] = 30
-    assert 0 < RADIUS <= 30
 
     @classmethod
     def from_credentials(cls, credentials: Credentials, cookies: FileCookieJar) -> Self:
@@ -338,30 +335,25 @@ class TgtgClient(BaseClient):
     async def get_favorites(self) -> list[Favorite]:
         return [fave async for fave in self._get_favorites()]
 
-    async def _get_favorites(
-        self,
-        *,
-        page_size: int = 50,  # Even if >50, server responds with at most 50 favorites
-    ) -> AsyncGenerator[Favorite]:
-        for page_num in count():
-            data = await self._post(
-                TgtgApi.FAVORITES,
-                json={
-                    "origin": self.LOCATION,
-                    "radius": float(self.RADIUS),
-                    "paging": {"page": page_num, "size": page_size},
-                    "bucket": {"filler_type": "Favorites"},
-                    "filters": [],
-                },
+    async def _get_favorites(self, *, page_size: int = 25) -> AsyncGenerator[Favorite]:
+        async def pages(page_size: int) -> AsyncGenerator[JSON]:
+            yield (
+                page := await self._post(
+                    TgtgApi.FAVORITES, json={"origin": self.LOCATION, "paging": {"page": 0, "size": page_size}}
+                )
             )
 
-            page = data.get("mobile_bucket", {}).get("items", [])
-            for fave in map(Favorite.from_json, page):
-                yield fave
+            while (page_num := page["paging"]["page"]) + 1 < page["paging"]["total_pages"]:
+                yield (
+                    page := await self._post(
+                        TgtgApi.FAVORITES,
+                        json={"origin": self.LOCATION, "paging": {"page": page_num + 1, "size": page_size}},
+                    )
+                )
 
-            assert "has_more" not in data
-            if len(page) < page_size:
-                break
+        async for page in pages(page_size):
+            for fave in map(Favorite.from_json, page["favourite_items"]):
+                yield fave
 
     async def get_item(self, item_id: int) -> Item:
         data = await self._post(TgtgApi.ITEM_STATUS, item_id, json={"origin": self.LOCATION})
