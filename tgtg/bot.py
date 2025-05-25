@@ -7,6 +7,7 @@ from contextlib import AsyncExitStack
 from functools import partial
 from http.cookiejar import MozillaCookieJar
 from itertools import chain
+from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
@@ -17,7 +18,7 @@ from anyio import create_task_group
 from apscheduler import ConflictPolicy
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from attrs import field, frozen
+from attrs import define, field
 from loguru import logger
 from tenacity import (
     before_sleep_log,
@@ -54,10 +55,12 @@ COOKIES_PATH = Path.cwd() / "cookies.txt"
 CREDENTIALS_PATH = (Path.cwd() / "credentials.json").resolve()
 
 
-@frozen(eq=False)
+@define(eq=False)
 class Bot:
     client: TgtgClient
     tracked_items: dict[int, Favorite | None]
+    favorites_page_size: int = field(default=25, kw_only=True)
+
     held_items: dict[int, deque[Reservation]] = field(init=False, factory=lambda: defaultdict(deque))
     scheduled_snipes: dict[int, Instant | None] = field(init=False, factory=dict)
 
@@ -179,6 +182,15 @@ class Bot:
 
     @logger.catch
     async def check_favorites(self) -> None:
+        def adjust_page_size(num_favorites: int) -> None:
+            DEFAULT_PAGE_SIZE = 25
+
+            num_pages = ceil(num_favorites / DEFAULT_PAGE_SIZE)
+            page_size = (num_pages or 1) * DEFAULT_PAGE_SIZE
+            if self.favorites_page_size != page_size:
+                logger.debug("Adjusting favorites page size to {}", page_size)
+                self.favorites_page_size = page_size
+
         async def process_favorite(fave: Favorite) -> None:
             if fave.id in self.tracked_items:
                 if fave == (old_fave := self.tracked_items[fave.id]):
@@ -273,11 +285,15 @@ class Bot:
                 self.scheduled_snipes[item.id] = item.next_drop
 
         async with create_task_group() as tg:
+            cnt_favorites = 0
             try:
-                async for fave in self.client._get_favorites():
+                async for fave in self.client._get_favorites(page_size=self.favorites_page_size):
+                    cnt_favorites += 1
                     tg.start_soon(process_favorite, fave)
             except (CaptchaError, httpx.TransportError) as e:
                 logger.error("{!r}", e)
+            else:
+                adjust_page_size(cnt_favorites)
 
     @logger.catch(onerror=lambda _: sys.exit(1))
     async def run(self) -> None:
