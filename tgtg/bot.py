@@ -60,6 +60,7 @@ class Bot:
     client: TgtgClient
     tracked_items: dict[int, Favorite | None]
     favorites_page_size: int = field(default=25, kw_only=True)
+    snipe_max_attempts: int = field(default=6, kw_only=True)
 
     held_items: dict[int, deque[Reservation]] = field(init=False, factory=lambda: defaultdict(deque))
     scheduled_snipes: dict[int, Instant | None] = field(init=False, factory=dict)
@@ -67,7 +68,6 @@ class Bot:
     API_FLAPPING_COOLDOWN: ClassVar[TimeDelta] = minutes(2)
     CATCH_RESERVATION_DELAY: ClassVar[TimeDelta] = seconds(1)
     CHECK_FAVORITES_TRIGGER: ClassVar[Trigger] = IntervalTrigger(seconds=2)
-    SNIPE_MAX_ATTEMPTS: ClassVar[int] = 6
 
     async def _del_scheduled_snipe(self, item_id: int, *, conflict_policy: ConflictPolicy) -> str:
         return await self.client.scheduler.add_schedule(
@@ -161,14 +161,15 @@ class Bot:
         logger.info("Sniping item {}...", item_id)
         await self._del_scheduled_snipe(item_id, conflict_policy=ConflictPolicy.exception)
 
-        for attempt in range(self.SNIPE_MAX_ATTEMPTS):
+        for attempt in range(self.snipe_max_attempts):
             item = await self.client.get_item(item_id)
             if did_item_change := item.num_available or item.tag != Item.Tag.CHECK_AGAIN_LATER:
                 logger.info(f"Snipe attempt {attempt + 1}<normal>: {item.colorize()}</normal>")  # noqa: G004
 
             if item.num_available and (reservation := await self.hold(item)):
-                if attempt == self.SNIPE_MAX_ATTEMPTS - 1:
-                    logger.warning("Snipe succeeded on final ({}th) attempt", self.SNIPE_MAX_ATTEMPTS)
+                if attempt == self.snipe_max_attempts - 1:
+                    logger.warning("Snipe succeeded on final attempt", self.snipe_max_attempts)
+                    self.snipe_max_attempts += 1
                 return reservation
 
             if did_item_change:
@@ -176,7 +177,7 @@ class Bot:
                 break
         else:
             logger.warning(
-                "Item {}<normal>: Unchanged after {} snipe attempts</normal>", item_id, self.SNIPE_MAX_ATTEMPTS
+                "Item {}<normal>: Unchanged after {} snipe attempts</normal>", item_id, self.snipe_max_attempts
             )
         return None
 
