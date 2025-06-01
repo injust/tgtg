@@ -31,10 +31,10 @@ from tenacity import (
 from whenever import Instant, TimeDelta, minutes, seconds
 
 from . import items
-from .client import TgtgClient
+from .client import Credentials, TgtgClient
 from .datadome import CaptchaError
 from .exceptions import TgtgApiError, TgtgLimitExceededError, TgtgPaymentError, TgtgSaleClosedError
-from .models import Credentials, Favorite, Item, Reservation
+from .models import Favorite, Item, Reservation
 from .utils import format_time, relative_date
 
 if TYPE_CHECKING:

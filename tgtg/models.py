@@ -4,23 +4,18 @@ import copy
 from abc import ABC
 from enum import Enum, StrEnum, auto
 from functools import wraps
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, cast, overload, override
 
-import httpx
-import jwt
-import orjson as jsonlib
-from attrs import Attribute, Converter, asdict, field, fields, frozen
+from attrs import Attribute, Converter, field, fields, frozen
 from attrs.converters import optional
 from babel.numbers import format_currency
 from loguru import logger
 from whenever import Instant, SystemDateTime, TimeDelta, ZonedDateTime, minutes
 
-from .api import TGTG_BASE_URL
 from .utils import Interval, relative_local_datetime
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator, Iterable
+    from collections.abc import Callable, Iterable
 
     type JSON = dict[str, Any]
 
@@ -91,42 +86,6 @@ class ColorizeMixin:
                 field_repr.append(f"{field_.name}=<normal>{repr_func(value)}</normal>")
 
         return f"{type(self).__name__}(<dim>{', '.join(field_repr)}</dim>)"
-
-
-@frozen(kw_only=True)
-class Credentials(httpx.Auth):
-    access_token: str
-    refresh_token: str
-
-    @classmethod
-    @debug
-    def from_json(cls, data: JSON) -> Self:
-        del data["access_token_ttl_seconds"]
-        return cls(**data)
-
-    @classmethod
-    def load(cls, path: Path) -> Self:
-        data = jsonlib.loads(path.read_bytes())
-        return cls(**data)
-
-    @override
-    def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response]:
-        if request.url.host == TGTG_BASE_URL.host:
-            request.headers["Authorization"] = f"Bearer {self.access_token}"
-        yield request
-
-    def needs_refresh(self) -> bool:
-        data = jwt.decode(self.access_token, options={"verify_signature": False})
-        expiration_time = Instant.from_timestamp(data["exp"])
-        return expiration_time <= Instant.now()
-
-    def save(self, path: Path) -> None:
-        data = asdict(self)
-        path.write_bytes(jsonlib.dumps(data))
-        if path.is_relative_to(Path.cwd()):
-            logger.debug("Saved credentials to<normal>: ./{}</normal>", path.relative_to(Path.cwd()))
-        else:
-            logger.debug("Saved credentials to<normal>: {}</normal>", path)
 
 
 @frozen(kw_only=True)

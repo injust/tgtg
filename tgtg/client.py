@@ -1,26 +1,28 @@
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
+from enum import StrEnum
 from http import HTTPStatus
 from itertools import accumulate
 from json import JSONDecodeError
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Self, cast, overload, override
 from uuid import UUID, uuid4
 
 import anyio
 import httpx
 import humanize
+import jwt
 import orjson as jsonlib
 from anyio import create_task_group
 from apscheduler import AsyncScheduler
-from attrs import Factory, asdict, define, field
+from attrs import Factory, asdict, define, field, frozen
 from babel.core import default_locale
 from loguru import logger
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 from whenever import Instant, SystemDateTime, minutes, seconds
 
 from ._client import APP_VERSION, HTTPX_LIMITS, USER_AGENT, BaseClient
-from .api import TGTG_BASE_URL, TgtgApi
 from .datadome import CaptchaError, DataDomeSdk
 from .exceptions import (
     TgtgAlreadyAbortedError,
@@ -38,12 +40,12 @@ from .exceptions import (
     TgtgUnauthorizedError,
     TgtgValidationError,
 )
-from .models import Credentials, FailedPayment, Favorite, Item, MultiUseVoucher, Payment, Reservation, Voucher
+from .models import FailedPayment, Favorite, Item, MultiUseVoucher, Payment, Reservation, Voucher
 from .ntfy import NtfyClient, Priority
 from .utils import format_tz_offset, httpx_response_json_or_text, load_cookie_jar
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Iterable
+    from collections.abc import AsyncGenerator, Generator, Iterable
     from http.cookiejar import FileCookieJar
 
     from .models import JSON
@@ -51,6 +53,102 @@ if TYPE_CHECKING:
 logger = logger.opt(colors=True)
 
 NTFY_TOPIC = "tgtg-injust"
+TGTG_BASE_URL = httpx.URL("https://apptoogoodtogo.com/api/")
+
+
+@frozen(kw_only=True)
+class Credentials(httpx.Auth):
+    access_token: str
+    refresh_token: str
+
+    @classmethod
+    def from_json(cls, data: JSON) -> Self:
+        del data["access_token_ttl_seconds"]
+        return cls(**data)
+
+    @classmethod
+    def load(cls, path: Path) -> Self:
+        data = jsonlib.loads(path.read_bytes())
+        return cls(**data)
+
+    @override
+    def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response]:
+        if request.url.host == TGTG_BASE_URL.host:
+            request.headers["Authorization"] = f"Bearer {self.access_token}"
+        yield request
+
+    def needs_refresh(self) -> bool:
+        data = jwt.decode(self.access_token, options={"verify_signature": False})
+        expiration_time = Instant.from_timestamp(data["exp"])
+        return expiration_time <= Instant.now()
+
+    def save(self, path: Path) -> None:
+        data = asdict(self)
+        path.write_bytes(jsonlib.dumps(data))
+        if path.is_relative_to(Path.cwd()):
+            logger.debug("Saved credentials to<normal>: ./{}</normal>", path.relative_to(Path.cwd()))
+        else:
+            logger.debug("Saved credentials to<normal>: {}</normal>", path)
+
+
+class TgtgApi(StrEnum):
+    APP_ON_STARTUP = "app/v1/onStartup"
+    USER_DATA_EXPORT = "gdpr/v1/{}/exportUserData"
+    USER_DELETE = "gdpr/v1/{}/deleteUser"
+    USER_EMAIL_CHANGE = "user/v2/emailChangeRequest"
+    USER_EMAIL_STATUS = "user/v2/getEmailStatus"
+    USER_PROFILE = "user/v2/profileDetails"
+    USER_SET_DEVICE = "user/device/v1/setUserDevice"
+
+    AUTH_BY_EMAIL = "auth/v5/authByEmail"
+    AUTH_LOGOUT = "auth/v5/logout"
+    AUTH_BY_PIN = "auth/v5/authByRequestPin"
+    AUTH_BY_POLLING = "auth/v5/authByRequestPollingId"
+    TOKEN_REFRESH = "token/v1/refresh"
+
+    INVITATION_STATUS = "invitation/v1/order/{}"
+    INVITATION_LINK_STATUS = "invitation/v1/order/fromLink/{}"
+    INVITATION_ORDER_STATUS = "invitation/v1/order/getOrder/{}"
+    INVITATION_ACCEPT = "invitation/v1/{}/accept"
+    INVITATION_CREATE = "invitation/v1/order/{}/createOrEnable"
+    INVITATION_DISABLE = "invitation/v1/{}/disable"
+    INVITATION_RETURN = "invitation/v1/{}/regret"
+
+    ITEMS = "item/v8/"
+    FAVORITES = "item/v9/favorites"
+
+    ITEM_STATUS = "item/v8/{}"
+    ITEM_FAVORITE = "user/favorite/v1/{}/update"
+
+    ORDERS = "order/v8/"
+    ORDERS_ACTIVE = "order/v8/active"
+
+    ORDER_STATUS = "order/v8/{}"
+    ORDER_STATUS_SHORT = "order/v8/{}/status"
+    ORDER_ABORT = "order/v8/{}/abort"
+    ORDER_CANCEL = "order/v8/{}/cancel"
+    ORDER_CREATE = "order/v8/create/{}"
+    ORDER_PAY = "order/v8/{}/pay"
+    ORDER_PAYMENT_STATUS = "payment/v4/order/{}"
+    ORDER_REDEEM = "order/v8/{}/redeem"
+
+    PAYMENT_STATUS = "payment/v4/{}"
+    PAYMENT_3DS = "payment/v4/{}/additionalAuthorization"
+
+    REWARDS = "user/rewards/v2"
+    REWARDS_RESERVE = "user/rewards/v2/order/{}/reserve"
+
+    SUPPORT_REQUEST = "support/v2/consumer/"
+
+    VOUCHERS_ACTIVE = "voucher/v4/active"
+    VOUCHERS_USED = "voucher/v4/used"
+
+    VOUCHER_ADD = "voucher/v4/add"
+    VOUCHER_STATUS = "voucher/v4/{}"
+
+    @property
+    def includes_credentials(self) -> bool:
+        return self not in {self.AUTH_BY_EMAIL, self.AUTH_BY_POLLING}
 
 
 @define(eq=False)

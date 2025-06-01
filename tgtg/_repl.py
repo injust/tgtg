@@ -7,8 +7,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from .client import TgtgClient
-from .models import Credentials
+from .client import Credentials, TgtgClient
 
 
 async def make_client(email: str = "") -> TgtgClient:
