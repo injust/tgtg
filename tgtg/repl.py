@@ -18,6 +18,8 @@ from textwrap import dedent
 from types import CodeType, FunctionType, ModuleType
 from typing import Any, override
 
+from ._client import APP_VERSION
+
 
 # TODO(Python 3.13.6): `from asyncio.__main__ import AsyncIOInteractiveConsole` instead
 class AsyncIOInteractiveConsole(InteractiveColoredConsole):  # type: ignore[misc]
@@ -87,7 +89,7 @@ class REPLThread(threading.Thread):
 
         try:
             banner = f"""
-                TGTG REPL on Python {python_version()}
+                TGTG {APP_VERSION} REPL on Python {python_version()}
                 Use "await" directly instead of "asyncio.run()".
 
             """
