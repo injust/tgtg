@@ -43,4 +43,5 @@ class DataDomeCookie:
                         logger.error("{!r}<normal>: {}</normal>", flow.response.status_code, data)
 
 
-addons = [DataDomeCookie()]
+if __name__.startswith("__mitmproxy_script__."):
+    addons = [DataDomeCookie()]

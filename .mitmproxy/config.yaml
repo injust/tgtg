@@ -16,5 +16,5 @@ mode:
 modify_headers:
   - /~q & ~hq X-Android-Cert:/X-Android-Cert/5C4C00B04389BA2BA09860AE3A605C92C74B14CA
 scripts:
-  - scripts/datadome-cookie.py
+  - ../tgtg/mitm/scripts/datadome_cookie.py
 web_password: '$argon2i$v=19$m=8,t=1,p=1$YWFhYWFhYWE$nXD9kg' # https://github.com/mitmproxy/mitmproxy/issues/7551#issuecomment-2781367454
