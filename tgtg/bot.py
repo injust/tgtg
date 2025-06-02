@@ -157,27 +157,27 @@ class Bot:
                 await self.client.ntfy.publish(f"Ordered: {order['quantity']}x {item.name}", tag="shopping_cart")
                 return order
 
-    async def snipe(self, item_id: int) -> Reservation | None:
-        logger.info("Sniping item {}...", item_id)
-        await self._del_scheduled_snipe(item_id, conflict_policy=ConflictPolicy.exception)
+    async def snipe(self, item: Item) -> Reservation | None:
+        logger.info("Sniping item {}...", item.id)
+        await self._del_scheduled_snipe(item.id, conflict_policy=ConflictPolicy.exception)
 
         for attempt in range(self.snipe_max_attempts):
-            item = await self.client.get_item(item_id)
-            if did_item_change := item.num_available or item.tag != Item.Tag.CHECK_AGAIN_LATER:
-                logger.info(f"Snipe attempt {attempt + 1}<normal>: {item.colorize()}</normal>")  # noqa: G004
+            snipe = await self.client.get_item(item.id)
+            if did_item_change := snipe.num_available or snipe.tag != item.tag:
+                logger.info(f"Snipe attempt {attempt + 1}<normal>: {snipe.colorize()}</normal>")  # noqa: G004
 
-            if item.num_available and (reservation := await self.hold(item)):
+            if snipe.num_available and (reservation := await self.hold(snipe)):
                 if attempt == self.snipe_max_attempts - 1:
                     logger.warning("Snipe succeeded on final attempt", self.snipe_max_attempts)
                     self.snipe_max_attempts += 1
                 return reservation
 
             if did_item_change:
-                logger.error(f"Unexpected<normal>: {item.colorize()}</normal>")  # noqa: G004
+                logger.error(f"Unexpected<normal>: {snipe.colorize()}</normal>")  # noqa: G004
                 break
         else:
             logger.warning(
-                "Item {}<normal>: Unchanged after {} snipe attempts</normal>", item_id, self.snipe_max_attempts
+                "Item {}<normal>: Unchanged after {} snipe attempts</normal>", item.id, self.snipe_max_attempts
             )
         return None
 
@@ -265,7 +265,7 @@ class Bot:
                 if item.next_drop:
                     try:
                         await self.client.scheduler.add_schedule(
-                            partial(self.snipe, item.id),
+                            partial(self.snipe, item),
                             DateTrigger(item.next_drop.py_datetime()),
                             id=f"snipe-item-{item.id}",
                             conflict_policy=ConflictPolicy.exception,
