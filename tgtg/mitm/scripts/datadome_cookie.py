@@ -21,10 +21,11 @@ COOKIES_PATH = Path.cwd() / "cookies.txt"
 
 @define(eq=False)
 class DataDomeCookie:
-    cookies: FileCookieJar = field(init=False, factory=lambda: MozillaCookieJar(COOKIES_PATH))
+    cookies: FileCookieJar = field(factory=lambda: MozillaCookieJar(COOKIES_PATH))
 
     def __attrs_post_init__(self) -> None:
-        self.cookies.load()
+        if not self.cookies:
+            self.cookies.load()
 
     @property
     def cookie(self) -> Cookie:

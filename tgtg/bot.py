@@ -34,6 +34,8 @@ from . import items
 from .client import Credentials, TgtgClient
 from .datadome import CaptchaError
 from .exceptions import TgtgApiError, TgtgLimitExceededError, TgtgPaymentError, TgtgSaleClosedError
+from .mitm import mitmproxy
+from .mitm.scripts import DataDomeCookie
 from .models import Favorite, Item, Reservation
 from .utils import format_time, relative_date
 
@@ -303,6 +305,8 @@ class Bot:
             exit_stack.callback(self.client.cookies.save, str(COOKIES_PATH))
             # `Credentials` instance is replaced on refresh
             exit_stack.callback(lambda: self.client.credentials.save(CREDENTIALS_PATH))
+
+            await exit_stack.enter_async_context(mitmproxy(scripts=[DataDomeCookie(self.client.cookies)]))
 
             await self.client.scheduler.add_schedule(
                 self.check_favorites,
