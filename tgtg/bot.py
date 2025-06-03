@@ -262,7 +262,7 @@ class Bot:
                 if item is None:
                     item = await self.client.get_item(fave.id)
 
-                if item.next_drop:
+                if item.next_drop and item.next_drop >= Instant.now():
                     try:
                         await self.client.scheduler.add_schedule(
                             partial(self.snipe, item),
