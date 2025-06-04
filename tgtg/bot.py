@@ -71,6 +71,8 @@ class Bot:
     CATCH_RESERVATION_DELAY: ClassVar[TimeDelta] = seconds(1)
     CHECK_FAVORITES_TRIGGER: ClassVar[Trigger] = IntervalTrigger(seconds=2)
 
+    MAX_RESERVATIONS: ClassVar[int] = 2
+
     async def _del_scheduled_snipe(self, item_id: int, *, conflict_policy: ConflictPolicy) -> str:
         return await self.client.scheduler.add_schedule(
             partial(self.scheduled_snipes.pop, item_id),
@@ -257,8 +259,14 @@ class Bot:
                 item = await self.client.get_item(fave.id)
                 if item.num_available != fave.num_available:
                     logger.warning(f"Updated<normal>: {item.to_favorite().colorize_diff(fave)}</normal>")  # noqa: G004
-                if item.num_available:
-                    await self.hold(item)
+
+                while (
+                    item.num_available
+                    and len(self.held_items[item.id]) < self.MAX_RESERVATIONS
+                    and (reservation := await self.hold(item))
+                    and reservation.quantity == item.max_quantity < item.num_available
+                ):
+                    item.num_available -= reservation.quantity
 
             if (
                 fave.tag != Favorite.Tag.CHECK_AGAIN_LATER

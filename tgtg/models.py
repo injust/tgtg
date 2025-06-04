@@ -6,7 +6,7 @@ from enum import Enum, StrEnum, auto
 from functools import wraps
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, Self, cast, overload, override
 
-from attrs import Attribute, Converter, field, fields, frozen
+from attrs import Attribute, Converter, define, field, fields, frozen
 from attrs.converters import optional
 from babel.numbers import format_currency
 from loguru import logger
@@ -69,7 +69,7 @@ def repr_field(obj: object) -> str:
             return repr(str(obj))
 
 
-@frozen(kw_only=True)
+@define(kw_only=True)
 class ColorizeMixin:
     @property
     def _non_default_fields(self) -> tuple[tuple[Attribute[object], object], ...]:
@@ -88,7 +88,7 @@ class ColorizeMixin:
         return f"{type(self).__name__}(<dim>{', '.join(field_repr)}</dim>)"
 
 
-@frozen(kw_only=True)
+@define(kw_only=True)
 class Favorite(ColorizeMixin):
     class Tag(StrEnum):
         NEW = "New"
@@ -269,7 +269,7 @@ class Favorite(ColorizeMixin):
         return f"{type(self).__name__}(<dim>{', '.join(field_repr)}</dim>)"
 
 
-@frozen(kw_only=True)
+@define(kw_only=True)
 class Item(Favorite):
     purchase_limit: int | None = field(default=None, alias="user_purchase_limit")
     next_drop: Instant | None = field(
@@ -373,7 +373,7 @@ class Price:
         return format_currency(self.minor_units / 10**self.decimals, self.code)
 
 
-@frozen(kw_only=True)
+@define(kw_only=True)
 class Reservation(ColorizeMixin):
     class State(Enum):
         RESERVED = auto()
