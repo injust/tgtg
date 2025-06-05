@@ -13,7 +13,7 @@ from whenever import Instant, TimeDelta, seconds
 from ._client import ANDROID_VERSION, APP_VERSION, BUILD_ID, BUILD_NUMBER, HTTPX_LIMITS, USER_AGENT, BaseClient
 
 if TYPE_CHECKING:
-    from http.cookiejar import CookieJar
+    from http.cookiejar import Cookie, CookieJar
 
 logger = logger.opt(colors=True)
 
@@ -36,12 +36,16 @@ class DataDomeSdk(BaseClient):
         )
         del self.httpx.headers["Accept"]  # TODO(https://github.com/encode/httpx/discussions/3037)
 
+    @property
+    def cookie(self) -> Cookie:
+        return next(cookie for cookie in self.cookies if cookie.name == COOKIE_NAME)
+
     async def on_response(self, response: httpx.Response) -> None:
         self.timestamps.append(now := Instant.now())
         if now - self.last_sync < self.SYNC_INTERVAL or not self.cookies:
             return
 
-        cookie = next(cookie for cookie in self.cookies if cookie.name == COOKIE_NAME)
+        cookie = self.cookie
         self.last_sync = now
         timestamps = self.timestamps
         self.timestamps = []

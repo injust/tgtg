@@ -22,11 +22,13 @@ COOKIES_PATH = Path.cwd() / "cookies.txt"
 @define(eq=False)
 class DataDomeCookie:
     cookies: FileCookieJar = field(init=False, factory=lambda: MozillaCookieJar(COOKIES_PATH))
-    cookie: Cookie = field(init=False)
 
     def __attrs_post_init__(self) -> None:
         self.cookies.load()
-        self.cookie = next(cookie for cookie in self.cookies if cookie.name == COOKIE_NAME)
+
+    @property
+    def cookie(self) -> Cookie:
+        return next(cookie for cookie in self.cookies if cookie.name == COOKIE_NAME)
 
     async def response(self, flow: HTTPFlow) -> None:
         if flow.request.pretty_host == "api-sdk.datadome.co" and flow.response:
@@ -36,8 +38,9 @@ class DataDomeCookie:
                 data = jsonlib.loads(flow.response.content)
                 match data["status"]:
                     case HTTPStatus.OK:
-                        self.cookie.value = SimpleCookie(data["cookie"])[COOKIE_NAME].value
-                        logger.debug(self.cookie.value)
+                        cookie = self.cookie
+                        cookie.value = SimpleCookie(data["cookie"])[COOKIE_NAME].value
+                        logger.debug(cookie.value)
                         self.cookies.save(str(COOKIES_PATH))
                     case _:
                         logger.error("{!r}<normal>: {}</normal>", flow.response.status_code, data)
