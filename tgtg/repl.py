@@ -111,6 +111,8 @@ class REPLThread(threading.Thread):
             commands = """
                 from tgtg._repl import make_client
                 client = await make_client()
+                from inspect import getmembers, ismethod
+                locals().update((name, func) for name, func in getmembers(client, ismethod) if not name.startswith("_"))
             """
             for command in dedent(commands.strip("\n")).splitlines():
                 console.write(f"{ps1}{command}\n")
