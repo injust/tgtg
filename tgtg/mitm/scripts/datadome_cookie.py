@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import orjson as jsonlib
-from attrs import define, field
 from loguru import logger
 
 if TYPE_CHECKING:
@@ -19,13 +18,15 @@ COOKIE_NAME = "datadome"
 COOKIES_PATH = Path.cwd() / "cookies.txt"
 
 
-@define(eq=False)
 class DataDomeCookie:
-    cookies: FileCookieJar = field(factory=lambda: MozillaCookieJar(COOKIES_PATH))
+    cookies: FileCookieJar
 
-    def __attrs_post_init__(self) -> None:
-        if not self.cookies:
+    def __init__(self, cookies: FileCookieJar | None = None) -> None:
+        if cookies is None:
+            self.cookies = MozillaCookieJar(COOKIES_PATH)
             self.cookies.load()
+        else:
+            self.cookies = cookies
 
     @property
     def cookie(self) -> Cookie:
