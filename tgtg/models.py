@@ -94,7 +94,9 @@ class Favorite(ColorizeMixin):
         NEW = "New"
 
         # Generic tags
+        HIDDEN_GEM = "Hidden gem"
         POPULAR = "Popular"
+        RARE_FIND = "Rare find"
         SELLING_FAST = "Selling fast"
 
         # Stateful tags
@@ -103,6 +105,20 @@ class Favorite(ColorizeMixin):
         NOTHING_TODAY = "Nothing today"
         SOLD_OUT = "Sold out"
         X_ITEMS_LEFT = "X left"
+
+        @property
+        def is_generic(self) -> bool:
+            return self in {self.HIDDEN_GEM, self.POPULAR, self.RARE_FIND, self.SELLING_FAST}
+
+        @property
+        def is_state(self) -> bool:
+            return self in {
+                self.CHECK_AGAIN_LATER,
+                self.ENDING_SOON,
+                self.NOTHING_TODAY,
+                self.SOLD_OUT,
+                self.X_ITEMS_LEFT,
+            }
 
         @classmethod
         @debug
@@ -125,6 +141,7 @@ class Favorite(ColorizeMixin):
     )
     name: str
     tag: Tag | None = field(default=Tag.NOTHING_TODAY, repr=repr_field)
+    _tags: list[Tag] = field(repr=False, alias="_tags")
     num_available: int = field(default=0, alias="items_available")
     pickup_interval: Interval[ZonedDateTime] | None = field(default=None, repr=repr_field)
     sold_out_at: Instant | None = field(
@@ -146,6 +163,15 @@ class Favorite(ColorizeMixin):
             ),
         ],
     )
+
+    def __attrs_post_init__(self) -> None:
+        assert self.is_selling == (self.num_available > 0), (
+            self.id,
+            self.tag,
+            self._tags,
+            self.num_available,
+            self.is_selling,
+        )
 
     @classmethod
     @debug
@@ -169,16 +195,14 @@ class Favorite(ColorizeMixin):
                 ZonedDateTime.parse_common_iso(f"{pickup_interval['end']}[{store_tz}]"),
             )
 
-        def convert_tags(data: Iterable[JSON]) -> Favorite.Tag | None:
-            tags = set(map(cls.Tag.from_json, data))
-            tags.discard(cls.Tag.NEW)
-            tags.discard(cls.Tag.POPULAR)
+        def process_tags(tags: Iterable[Favorite.Tag]) -> Favorite.Tag | None:
+            tags = set(tags) - {cls.Tag.NEW}
 
             # Handle multiple tags
-            if cls.Tag.CHECK_AGAIN_LATER in tags or cls.Tag.ENDING_SOON in tags:
-                tags.discard(cls.Tag.X_ITEMS_LEFT)
-            elif cls.Tag.X_ITEMS_LEFT in tags:
-                tags.discard(cls.Tag.SELLING_FAST)
+            if states := {tag for tag in tags if tag.is_state}:
+                tags = states
+                if cls.Tag.CHECK_AGAIN_LATER in tags or cls.Tag.ENDING_SOON in tags:
+                    tags.discard(cls.Tag.X_ITEMS_LEFT)
 
             assert len(tags) <= 1, tags
             return next(iter(tags), None)
@@ -186,7 +210,7 @@ class Favorite(ColorizeMixin):
         item: JSON = data.pop("item")
         assert not item["can_user_supply_packaging"], item["can_user_supply_packaging"]
         store: JSON = data.pop("store")
-        item_tags: list[JSON] = data.pop("item_tags")
+        item_tags = list(map(cls.Tag.from_json, data.pop("item_tags")))
 
         for key in (
             "display_name",
@@ -206,19 +230,23 @@ class Favorite(ColorizeMixin):
         return cls(
             id=item["item_id"],
             name=build_name(item, store),
-            tag=convert_tags(item_tags),
+            _tags=item_tags,
+            tag=process_tags(item_tags),
             pickup_interval=build_pickup_interval(data.pop("pickup_interval", None), store),
             **data,
         )
 
     @property
     def is_selling(self) -> bool:
-        return self.tag in {self.Tag.ENDING_SOON, self.Tag.X_ITEMS_LEFT, self.Tag.SELLING_FAST}
+        if self.tag is None:
+            return self.num_available > 0
+        selling_states = {self.Tag.ENDING_SOON, self.Tag.X_ITEMS_LEFT}
+        return self.tag in selling_states or self.tag.is_generic
 
     @property
     def is_interesting(self) -> bool:
         fields_ = fields(type(self))
-        uninteresting_fields = {fields_.id, fields_.name}
+        uninteresting_fields = {fields_.id, fields_.name, *(field for field in fields_ if field.name.startswith("_"))}
         return any(field not in uninteresting_fields for field, _ in self._non_default_fields)
 
     def colorize_diff(self, old_item: Self) -> str:
@@ -449,3 +477,7 @@ class SingleUseVoucher(Voucher):
     @classmethod
     def from_json(cls, data: JSON) -> NoReturn:
         raise NotImplementedError
+
+
+for tag in Favorite.Tag.__members__.values():
+    assert tag == Favorite.Tag.NEW or tag.is_generic or tag.is_state, tag

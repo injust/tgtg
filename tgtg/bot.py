@@ -171,10 +171,10 @@ class Bot:
 
         for attempt in range(self.snipe_max_attempts):
             snipe = await self.client.get_item(item.id)
-            if did_item_change := snipe.num_available or snipe.tag != item.tag:
+            if did_item_change := snipe.is_selling or snipe.tag != item.tag:
                 logger.info(f"Snipe attempt {attempt + 1}<normal>: {snipe.colorize()}</normal>")  # noqa: G004
 
-            if snipe.num_available and (reservation := await self.hold(snipe)):
+            if snipe.is_selling and (reservation := await self.hold(snipe)):
                 if attempt == self.snipe_max_attempts - 1:
                     logger.warning("Snipe succeeded on final attempt", self.snipe_max_attempts)
                     self.snipe_max_attempts += 1
@@ -253,7 +253,7 @@ class Bot:
                 self.tracked_items[fave.id] = fave
 
             item: Item | None = None
-            if fave.num_available:
+            if fave.is_selling:
                 item = await self.client.get_item(fave.id)
                 if item.num_available != fave.num_available:
                     logger.warning(f"Updated<normal>: {item.to_favorite().colorize_diff(fave)}</normal>")  # noqa: G004
