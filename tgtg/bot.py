@@ -116,10 +116,16 @@ class Bot:
         try:
             reservation = await self.client.reserve(held.item_id, held.quantity)
         except TgtgApiError as e:
-            logger_func = logger.warning if isinstance(e, TgtgSaleClosedError) else logger.error
+            logger_func = logger.error
+            match e:
+                case TgtgSaleClosedError():
+                    logger_func = logger.warning
+                case TgtgLimitExceededError():
+                    await self._untrack_item(held.item_id)
+                case _:
+                    pass
+
             logger_func("Item {}<normal>: {!r}</normal>", held.item_id, e)
-            if isinstance(e, TgtgLimitExceededError):
-                await self._untrack_item(held.item_id)
             return None
         else:
             logger.success(f"<normal>{reservation.colorize()}</normal>")
