@@ -33,7 +33,7 @@ from whenever import Instant, TimeDelta, minutes, seconds
 from . import items
 from .client import Credentials, TgtgClient
 from .datadome import CaptchaError
-from .exceptions import TgtgApiError, TgtgLimitExceededError, TgtgPaymentError, TgtgSaleClosedError
+from .exceptions import TgtgApiError, TgtgLimitExceededError, TgtgPaymentError, TgtgSaleClosedError, TgtgSoldOutError
 from .mitm import mitmproxy
 from .mitm.scripts import DataDomeCookie
 from .models import Favorite, Item, Reservation
@@ -122,6 +122,9 @@ class Bot:
                     logger_func = logger.warning
                 case TgtgLimitExceededError():
                     await self._untrack_item(held.item_id)
+                case TgtgSoldOutError():
+                    # TODO
+                    pass
                 case _:
                     pass
 
