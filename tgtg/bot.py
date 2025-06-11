@@ -9,10 +9,10 @@ from http.cookiejar import MozillaCookieJar
 from itertools import chain
 from math import ceil
 from pathlib import Path
+from random import randrange
 from typing import TYPE_CHECKING, ClassVar
 
 import anyio
-import apscheduler
 import httpx
 from anyio import create_task_group
 from apscheduler import ConflictPolicy
@@ -70,6 +70,7 @@ class Bot:
     API_FLAPPING_COOLDOWN: ClassVar[TimeDelta] = minutes(2)
     CATCH_RESERVATION_DELAY: ClassVar[TimeDelta] = seconds(1)
     CHECK_FAVORITES_TRIGGER: ClassVar[Trigger] = IntervalTrigger(seconds=2)
+    SNIPE_GET_ITEM_DELAY: ClassVar[TimeDelta] = minutes(2)
 
     MAX_RESERVATIONS: ClassVar[int] = 2
 
@@ -248,6 +249,14 @@ class Bot:
 
                 if fave.id in items.ignored:
                     return
+
+                if (
+                    old_fave
+                    and old_fave.tag == Favorite.Tag.NOTHING_TODAY
+                    and fave.tag == Favorite.Tag.CHECK_AGAIN_LATER
+                    and fave.id in self.scheduled_snipes
+                ):
+                    del self.scheduled_snipes[fave.id]
             elif fave.is_interesting or fave.id not in items.inactive:
                 logger.warning(
                     f"{'Inactive' if fave.id in items.inactive else 'Unknown'}<normal>: {fave.colorize()}</normal>"  # noqa: G004
@@ -274,28 +283,28 @@ class Bot:
                 and not self.scheduled_snipes[fave.id]
             ):
                 await self._del_scheduled_snipe(fave.id, conflict_policy=ConflictPolicy.do_nothing)
-            elif fave.tag == Favorite.Tag.CHECK_AGAIN_LATER and fave.id not in self.scheduled_snipes:
+            elif fave.id not in self.scheduled_snipes and (
+                fave.tag == Favorite.Tag.CHECK_AGAIN_LATER
+                or (fave.tag == Favorite.Tag.NOTHING_TODAY and fave.id not in items.inactive)
+            ):
                 if item is None:
+                    await anyio.sleep(randrange(int(self.SNIPE_GET_ITEM_DELAY.in_seconds())))
                     item = await self.client.get_item(fave.id)
 
                 if item.next_drop and item.next_drop >= Instant.now():
-                    try:
-                        await self.client.scheduler.add_schedule(
-                            partial(self.snipe, item),
-                            DateTrigger(item.next_drop.py_datetime()),
-                            id=f"snipe-item-{item.id}",
-                            conflict_policy=ConflictPolicy.exception,
-                        )
-                    except apscheduler.ConflictingIdError as e:
-                        logger.error("{!r}", e)
-                    else:
-                        local_ts = item.next_drop.to_system_tz()
-                        logger.info(
-                            "Item {}<normal>: Snipe scheduled for {} at {}</normal>",
-                            item.id,
-                            relative_date(local_ts.date()),
-                            format_time(local_ts.time()),
-                        )
+                    await self.client.scheduler.add_schedule(
+                        partial(self.snipe, item),
+                        DateTrigger(item.next_drop.py_datetime()),
+                        id=f"snipe-item-{item.id}",
+                        conflict_policy=ConflictPolicy.replace,
+                    )
+                    local_ts = item.next_drop.to_system_tz()
+                    logger.info(
+                        "Item {}<normal>: Snipe scheduled for {} at {}</normal>",
+                        item.id,
+                        relative_date(local_ts.date()),
+                        format_time(local_ts.time()),
+                    )
                 else:
                     logger.debug("Item {}<normal>: No upcoming drop</normal>", item.id)
 
