@@ -47,7 +47,7 @@ def repr_field(obj: object) -> str:
         case Instant():
             date, time = relative_local_datetime(obj)
             return repr(f"{date} at {time}")
-        case Interval():
+        case Interval() if isinstance(obj.start, ZonedDateTime) and isinstance(obj.end, ZonedDateTime):  # pyright: ignore[reportUnknownMemberType]
             start_date, start_time = relative_local_datetime(obj.start)
             end_date, end_time = relative_local_datetime(obj.end)
 
@@ -126,7 +126,7 @@ class Favorite(ColorizeMixin):
     name: str
     tag: Tag | None = field(default=Tag.NOTHING_TODAY, repr=repr_field)
     num_available: int = field(default=0, alias="items_available")
-    pickup_interval: Interval | None = field(default=None, repr=repr_field)
+    pickup_interval: Interval[ZonedDateTime] | None = field(default=None, repr=repr_field)
     sold_out_at: Instant | None = field(
         default=None,
         repr=repr_field,
@@ -159,7 +159,7 @@ class Favorite(ColorizeMixin):
 
             return " ".join(name)
 
-        def build_pickup_interval(pickup_interval: JSON | None, store: JSON) -> Interval | None:
+        def build_pickup_interval(pickup_interval: JSON | None, store: JSON) -> Interval[ZonedDateTime] | None:
             if pickup_interval is None:
                 return None
 
