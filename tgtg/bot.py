@@ -10,7 +10,7 @@ from itertools import chain
 from math import ceil
 from pathlib import Path
 from random import randrange
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, NamedTuple
 
 import anyio
 import httpx
@@ -57,6 +57,11 @@ COOKIES_PATH = Path.cwd() / "cookies.txt"
 CREDENTIALS_PATH = (Path.cwd() / "credentials.json").resolve()
 
 
+class ScheduledSnipe(NamedTuple):
+    tag: Item.Tag | None
+    next_drop: Instant | None
+
+
 @define(eq=False)
 class Bot:
     client: TgtgClient
@@ -65,7 +70,7 @@ class Bot:
     snipe_max_attempts: int = field(default=5, kw_only=True)
 
     held_items: dict[int, deque[Reservation]] = field(init=False, factory=lambda: defaultdict(deque))
-    scheduled_snipes: dict[int, Instant | None] = field(init=False, factory=dict)
+    scheduled_snipes: dict[int, ScheduledSnipe] = field(init=False, factory=dict)
 
     API_FLAPPING_COOLDOWN: ClassVar[TimeDelta] = minutes(2)
     CATCH_RESERVATION_DELAY: ClassVar[TimeDelta] = seconds(1)
@@ -249,14 +254,6 @@ class Bot:
 
                 if fave.id in items.ignored:
                     return
-
-                if (
-                    old_fave
-                    and old_fave.tag == Favorite.Tag.NOTHING_TODAY
-                    and fave.tag == Favorite.Tag.CHECK_AGAIN_LATER
-                    and fave.id in self.scheduled_snipes
-                ):
-                    del self.scheduled_snipes[fave.id]
             elif fave.is_interesting or fave.id not in items.inactive:
                 logger.warning(
                     f"{'Inactive' if fave.id in items.inactive else 'Unknown'}<normal>: {fave.colorize()}</normal>"  # noqa: G004
@@ -280,12 +277,19 @@ class Bot:
             if (
                 fave.tag != Favorite.Tag.CHECK_AGAIN_LATER
                 and fave.id in self.scheduled_snipes
-                and not self.scheduled_snipes[fave.id]
+                and not self.scheduled_snipes[fave.id].next_drop
             ):
                 await self._del_scheduled_snipe(fave.id, conflict_policy=ConflictPolicy.do_nothing)
-            elif fave.id not in self.scheduled_snipes and (
-                fave.tag == Favorite.Tag.CHECK_AGAIN_LATER
-                or (fave.tag == Favorite.Tag.NOTHING_TODAY and fave.id not in items.inactive)
+            elif (
+                fave.id not in self.scheduled_snipes
+                and (
+                    fave.tag == Favorite.Tag.CHECK_AGAIN_LATER
+                    or (fave.tag == Favorite.Tag.NOTHING_TODAY and fave.id not in items.inactive)
+                )
+            ) or (
+                fave.id in self.scheduled_snipes
+                and fave.tag == Favorite.Tag.CHECK_AGAIN_LATER
+                and self.scheduled_snipes[fave.id].tag == Favorite.Tag.NOTHING_TODAY
             ):
                 if item is None:
                     await anyio.sleep(randrange(int(self.SNIPE_GET_ITEM_DELAY.in_seconds())))
@@ -305,10 +309,23 @@ class Bot:
                         relative_date(local_ts.date()),
                         format_time(local_ts.time()),
                     )
+
+                    if (
+                        item.id in self.scheduled_snipes
+                        and (old_snipe := self.scheduled_snipes[item.id].next_drop)
+                        and old_snipe != item.next_drop
+                    ):
+                        old_local_ts = old_snipe.to_system_tz()
+                        logger.warning(
+                            "Item {}<normal>: Snipe scheduled for {} at {} was replaced</normal>",
+                            item.id,
+                            relative_date(old_local_ts.date()),
+                            format_time(old_local_ts.time()),
+                        )
                 else:
                     logger.debug("Item {}<normal>: No upcoming drop</normal>", item.id)
 
-                self.scheduled_snipes[item.id] = item.next_drop
+                self.scheduled_snipes[item.id] = ScheduledSnipe(item.tag, item.next_drop)
 
         async with create_task_group() as tg:
             cnt_favorites = 0
