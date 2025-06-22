@@ -175,7 +175,7 @@ class Favorite(ColorizeMixin):
             tags.discard(cls.Tag.POPULAR)
 
             # Handle multiple tags
-            if cls.Tag.CHECK_AGAIN_LATER in tags:
+            if cls.Tag.CHECK_AGAIN_LATER in tags or cls.Tag.ENDING_SOON in tags:
                 tags.discard(cls.Tag.X_ITEMS_LEFT)
             elif cls.Tag.X_ITEMS_LEFT in tags:
                 tags.discard(cls.Tag.SELLING_FAST)
