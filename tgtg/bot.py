@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, ClassVar, NamedTuple
 
 import anyio
 import httpx
+import humanize
 from anyio import create_task_group
 from apscheduler import ConflictPolicy
 from apscheduler.triggers.date import DateTrigger
@@ -266,13 +267,21 @@ class Bot:
                 if item.num_available != fave.num_available:
                     logger.warning(f"Updated<normal>: {item.to_favorite().colorize_diff(fave)}</normal>")  # noqa: G004
 
-                while (
-                    item.num_available
-                    and len(self.held_items[item.id]) < self.MAX_RESERVATIONS
-                    and (reservation := await self.hold(item))
-                    and reservation.quantity == item.max_quantity < item.num_available
-                ):
-                    item.num_available -= reservation.quantity
+                if item.blocked_until:
+                    # TODO: Monitor like an ignored item, but unignore when unblocked
+                    logger.warning(
+                        "Item {}<normal>: Blocked for {}</normal>",
+                        item.id,
+                        humanize.precisedelta((item.blocked_until - Instant.now()).py_timedelta()),
+                    )
+                else:
+                    while (
+                        item.num_available
+                        and len(self.held_items[item.id]) < self.MAX_RESERVATIONS
+                        and (reservation := await self.hold(item))
+                        and reservation.quantity == item.max_quantity < item.num_available
+                    ):
+                        item.num_available -= reservation.quantity
 
             if (
                 fave.tag != Favorite.Tag.CHECK_AGAIN_LATER
