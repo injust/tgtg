@@ -1,85 +1,22 @@
 from __future__ import annotations
 
-import ast
 import asyncio
-import concurrent.futures
-import contextvars
-import inspect
 import os
 import site
 import sys
 import threading
 import warnings
 from _colorize import ANSIColors, can_colorize  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
-from _pyrepl.console import InteractiveColoredConsole  # pyright: ignore[reportMissingTypeStubs]
-from asyncio import AbstractEventLoop, Task, futures
+from asyncio import Task
+from asyncio.__main__ import AsyncIOInteractiveConsole  # pyright: ignore[reportMissingTypeStubs]
 from platform import python_version
 from textwrap import dedent
-from types import CodeType, FunctionType, ModuleType
-from typing import Any, override
+from typing import TYPE_CHECKING, Any, override
 
 from ._client import APP_VERSION
 
-
-# TODO(Python 3.13.6): `from asyncio.__main__ import AsyncIOInteractiveConsole` instead
-class AsyncIOInteractiveConsole(InteractiveColoredConsole):  # type: ignore[misc]
-    def __init__(self, locals: dict[str, object] | None, loop: AbstractEventLoop) -> None:
-        super().__init__(locals, filename="<stdin>")
-        self.compile.compiler.flags |= ast.PyCF_ALLOW_TOP_LEVEL_AWAIT
-
-        self.loop = loop
-        self.context = contextvars.copy_context()
-
-    @override
-    def runcode(self, code: CodeType) -> Any:
-        global return_code
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-
-        def callback() -> None:
-            global return_code, repl_future, keyboard_interrupted
-
-            repl_future = None
-            keyboard_interrupted = False
-
-            func = FunctionType(code, self.locals)
-            try:
-                coro = func()
-            except SystemExit as se:
-                return_code = se.code
-                self.loop.stop()
-                return
-            except KeyboardInterrupt as ex:
-                keyboard_interrupted = True
-                future.set_exception(ex)
-                return
-            except BaseException as ex:
-                future.set_exception(ex)
-                return
-
-            if not inspect.iscoroutine(coro):
-                future.set_result(coro)
-                return
-
-            try:
-                repl_future = self.loop.create_task(coro, context=self.context)
-                futures._chain_future(repl_future, future)  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
-            except BaseException as exc:
-                future.set_exception(exc)
-
-        self.loop.call_soon_threadsafe(callback, context=self.context)
-
-        try:
-            return future.result()
-        except SystemExit as se:
-            return_code = se.code
-            self.loop.stop()
-            return None
-        except BaseException:
-            if keyboard_interrupted:
-                self.write("\nKeyboardInterrupt\n")
-            else:
-                self.showtraceback()
-            return self.STATEMENT_FAILED
+if TYPE_CHECKING:
+    from types import ModuleType
 
 
 class REPLThread(threading.Thread):
