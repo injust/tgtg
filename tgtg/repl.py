@@ -6,7 +6,7 @@ import site
 import sys
 import threading
 import warnings
-from _colorize import ANSIColors, can_colorize  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
+from _colorize import get_theme
 from asyncio import Task
 from asyncio.__main__ import AsyncIOInteractiveConsole  # pyright: ignore[reportMissingTypeStubs]
 from platform import python_version
@@ -42,8 +42,9 @@ class REPLThread(threading.Thread):
                     exec(startup_code, console.locals)
 
             ps1 = getattr(sys, "ps1", ">>> ")
-            if can_colorize() and CAN_USE_PYREPL:
-                ps1 = f"{ANSIColors.BOLD_MAGENTA}{ps1}{ANSIColors.RESET}"
+            if CAN_USE_PYREPL:
+                theme = get_theme().syntax
+                ps1 = f"{theme.prompt}{ps1}{theme.reset}"
 
             commands = """
                 from tgtg._repl import make_client
